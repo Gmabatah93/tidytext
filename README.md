@@ -16,3 +16,8 @@
 - **nrc:** _categorizes words in a binary fashion [ yes/no ] into categories of positive, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, and trust._
 
 # Term-Frequency Inverse Document Frequency
+> **Term Frequency:** how frequently a word occurs in a document.\
+**Inverse Document Frequency:**  decreases the weight for commonly used words and increases the weight for words that are not used very much in a collection of documents.\
+**TF-IDF:** the frequency of a term adjusted for how rarely it is used. _(find the important words for the content of each document by decreasing the weight for commonly used words and increasing the weight for words that are not used very much in a collection or corpus of documents)_
+
+<img src="Images/idf.PNG" width="500">
