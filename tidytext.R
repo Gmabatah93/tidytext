@@ -183,3 +183,160 @@ tidy_books %>%
   acast(word ~ sentiment, value.var = "n", fill = 0) %>%
   comparison.cloud(colors = c("gray20", "gray80"),
                    max.words = 100)
+
+# TF-IDF ----
+book_words <- janeaustenr::austen_books() %>%
+  unnest_tokens(word, text) %>%
+  count(book, word, sort = TRUE)
+total_words <- book_words %>% 
+  group_by(book) %>% 
+  summarize(total = sum(n))
+book_words <- left_join(book_words, total_words)
+
+book_words %>% 
+  ggplot(aes(n/total, fill = book)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA, 0.0009) +
+  facet_wrap(~book, ncol = 2, scales = "free_y")
+
+# Zipf’s law
+freq_by_rank <- book_words %>% 
+  group_by(book) %>% 
+  mutate(rank = row_number(), 
+         `term frequency` = n/total) %>%
+  ungroup()
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`, color = book)) + 
+  geom_abline(intercept = -0.62, slope = -1.1, 
+              color = "gray50", linetype = 2) +
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+# tf-idf
+book_tf_idf <- book_words %>%
+  bind_tf_idf(word, book, n)
+book_tf_idf %>%
+  select(-total) %>%
+  arrange(desc(tf_idf))
+
+# - Visual
+library(forcats)
+
+book_tf_idf %>%
+  group_by(book) %>%
+  slice_max(tf_idf, n = 15) %>%
+  ungroup() %>%
+  ggplot(aes(tf_idf, fct_reorder(word, tf_idf), fill = book)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~book, ncol = 2, scales = "free") +
+  labs(x = "tf-idf", y = NULL)
+
+# n-grams & correlations ----
+austen_bigrams <- janeaustenr::austen_books() %>% 
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+austen_bigrams %>% 
+  count(bigram, sort = TRUE)
+
+bigrams_seperated <- austen_bigrams %>% 
+  separate(bigram, c("word1","word2"), sep = " ")
+
+bigrams_filtered <- bigrams_seperated %>% 
+  filter(!word1 %in% stop_words$word) %>% 
+  filter(!word2 %in% stop_words$word)
+
+bigrams_count <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+janeaustenr::austen_books() %>%
+  unnest_tokens(trigram, text, token = "ngrams", n = 3) %>%
+  separate(trigram, c("word1", "word2", "word3"), sep = " ") %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word,
+         !word3 %in% stop_words$word) %>%
+  count(word1, word2, word3, sort = TRUE)
+
+bigrams_filtered %>%
+  filter(word2 == "street") %>%
+  count(book, word1, sort = TRUE)
+
+bigram_tf_idf <- bigrams_united %>%
+  count(book, bigram) %>%
+  bind_tf_idf(bigram, book, n) %>%
+  arrange(desc(tf_idf))
+
+bigrams_seperated %>%
+  filter(word1 == "not") %>%
+  count(word1, word2, sort = TRUE)
+
+AFINN <- get_sentiments("afinn")
+not_words <- bigrams_seperated %>%
+  filter(word1 == "not") %>%
+  inner_join(AFINN, by = c(word2 = "word")) %>%
+  count(word2, value, sort = TRUE)
+not_words %>%
+  mutate(contribution = n * value) %>%
+  arrange(desc(abs(contribution))) %>%
+  head(20) %>%
+  mutate(word2 = reorder(word2, contribution)) %>%
+  ggplot(aes(n * value, word2, fill = n * value > 0)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = "Sentiment value * number of occurrences",
+       y = "Words preceded by \"not\"")
+
+negation_words <- c("not", "no", "never", "without")
+
+negated_words <- bigrams_seperated %>%
+  filter(word1 %in% negation_words) %>%
+  inner_join(AFINN, by = c(word2 = "word")) %>%
+  count(word1, word2, value, sort = TRUE)
+
+library(igraph)
+library(ggraph)
+bigram_graph <- bigrams_count %>%
+  filter(n > 20) %>%
+  graph_from_data_frame()
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+
+set.seed(2020)
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+
+
+# Converting to and from non-tidy formats ----
+library(tm)
+data("AssociatedPress", package = "topicmodels")
+AssociatedPress
+terms <- Terms(AssociatedPress)
+head(terms)
+
+ap_td <- tidy(AssociatedPress) 
+
+ap_sentiments <- ap_td %>%
+  inner_join(get_sentiments("bing"), by = c(term = "word"))
+ap_sentiments %>%
+  count(sentiment, term, wt = count) %>%
+  ungroup() %>%
+  filter(n >= 200) %>%
+  mutate(n = ifelse(sentiment == "negative", -n, n)) %>%
+  mutate(term = reorder(term, n)) %>%
+  ggplot(aes(n, term, fill = sentiment)) +
+  geom_col() +
+  labs(x = "Contribution to sentiment", y = NULL)
+
+ap_td %>%
+  cast_dtm(document, term, count)

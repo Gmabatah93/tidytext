@@ -21,3 +21,13 @@
 **TF-IDF:** the frequency of a term adjusted for how rarely it is used. _(find the important words for the content of each document by decreasing the weight for commonly used words and increasing the weight for words that are not used very much in a collection or corpus of documents)_
 
 <img src="Images/idf.PNG" width="500">
+
+# n-grams & Correlations
+
+# Converting to and from non-tidy formats
+<img src="Images/nontidy.PNG" width="700">
+
+## Document-Term Matrix
+> - Each row represents one document
+> - Each column represents one term
+> - Each value (typically) contains the number of appearances of that term in that document
