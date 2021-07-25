@@ -1,10 +1,8 @@
-library(tidytext)
-library(dplyr)
-library(tidyr)
-library(stringr)
-library(ggplot2)
+library(tidyverse)
 theme_set(theme_minimal())
+library(tidytext)
 library(wordcloud)
+library(topicmodels)
 
 #
 # Tidytext Format ----
@@ -324,8 +322,11 @@ AssociatedPress
 terms <- Terms(AssociatedPress)
 head(terms)
 
-ap_td <- tidy(AssociatedPress) 
 
+
+# Tidying DocumentTermMatrix objects
+ap_td <- tidy(AssociatedPress) 
+# - Sentiment Analysis
 ap_sentiments <- ap_td %>%
   inner_join(get_sentiments("bing"), by = c(term = "word"))
 ap_sentiments %>%
@@ -337,6 +338,131 @@ ap_sentiments %>%
   ggplot(aes(n, term, fill = sentiment)) +
   geom_col() +
   labs(x = "Contribution to sentiment", y = NULL)
+# - Casting tidytext data into a DTM
+ap_td %>% cast_dtm(document = document, 
+                   term = term, 
+                   value = count)
+# - Cast into a Matix Object
+library(Matrix)
+m <- ap_td %>% cast_sparse(document, term, count)
 
-ap_td %>%
-  cast_dtm(document, term, count)
+
+
+
+# Tidying corpus objects with metadata
+data("acq", package = "tm")
+acq[[1]]
+
+acq_td <- tidy(acq)
+# - Tokenization
+acq_tokens <- acq_td %>%
+  select(-places) %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words, by = "word")
+# - Bag of Words
+acq_tokens %>% 
+  count(word, sort = TRUE)
+# - TF-IDF
+acq_tokens %>% 
+  count(id, word) %>% 
+  bind_tf_idf(term = word,
+              document =  id,
+              n = n) %>% 
+  arrange(desc(tf_idf))
+
+
+
+# Topic Models ----
+data("AssociatedPress")
+AssociatedPress
+# - LDA
+ap_lda <- LDA(AssociatedPress, k = 2, control = list(seed = 1234))
+ap_topics <- tidy(ap_lda, matrix = "beta")
+# - LDA: top terms
+ap_top_terms <- ap_topics %>% 
+  group_by(topic) %>% 
+  slice_max(beta, n = 10) %>% 
+  ungroup() %>% 
+  arrange(topic, -beta)
+
+ap_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered()
+
+# LDA: log ratio
+beta_wide <- ap_topics %>%
+  mutate(topic = paste0("topic", topic)) %>%
+  pivot_wider(names_from = topic, values_from = beta) %>% 
+  filter(topic1 > .001 | topic2 > .001) %>%
+  mutate(log_ratio = log2(topic2 / topic1))
+beta_wide %>% 
+  slice_max(abs(log_ratio), n = 20) %>% 
+  mutate(term = reorder(term, log_ratio)) %>% 
+  ggplot(aes(log_ratio, term)) +
+  geom_col()
+
+# LDA: Document-Topic Probabilities
+ap_documents <- tidy(ap_lda, matrix = "gamma")
+tidy(AssociatedPress) %>%
+  filter(document == 6) %>%
+  arrange(desc(count))
+
+# The Great Library Heist ----
+library(gutenbergr)
+titles <- c("Twenty Thousand Leagues under the Sea", 
+            "The War of the Worlds",
+            "Pride and Prejudice", 
+            "Great Expectations")
+books <- gutenberg_works(title %in% titles) %>% 
+  gutenberg_download(meta_fields = "title")
+
+# divide into documents, each representing one chapter
+by_chapter <- books %>%
+  group_by(title) %>%
+  mutate(chapter = cumsum(str_detect(
+    text, regex("^chapter ", ignore_case = TRUE)
+  ))) %>%
+  ungroup() %>%
+  filter(chapter > 0) %>%
+  unite(document, title, chapter)
+
+# split into words
+by_chapter_word <- by_chapter %>%
+  unnest_tokens(word, text)
+
+# find document-word counts
+word_counts <- by_chapter_word %>%
+  anti_join(stop_words) %>%
+  count(document, word, sort = TRUE) %>%
+  ungroup()
+
+# LDA: On Chapters
+chapters_dtm <- word_counts %>%
+  cast_dtm(document, word, n)
+chapters_lda <- LDA(chapters_dtm, k = 4, control = list(seed = 1234))
+chapter_topics <- tidy(chapters_lda, matrix = "beta")
+top_terms <- chapter_topics %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 5) %>% 
+  ungroup() %>%
+  arrange(topic, -beta)
+
+top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered()
+
+chapters_gamma <- tidy(chapters_lda, matrix = "gamma")
+chapters_gamma <- chapters_gamma %>%
+  separate(document, c("title", "chapter"), sep = "_", convert = TRUE)
+chapters_gamma %>%
+  mutate(title = reorder(title, gamma * topic)) %>%
+  ggplot(aes(factor(topic), gamma)) +
+  geom_boxplot() +
+  facet_wrap(~ title) +
+  labs(x = "topic", y = expression(gamma))

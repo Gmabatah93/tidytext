@@ -6,7 +6,7 @@
 
 **Token:** a meaningful unit of text, most often a word, that we are interested in using for further analysis, and tokenization is the process of splitting text into tokens.\
 **Corpus:** raw strings annotated with additional metadata and details.\
-**Document-Term Matrix:** a sparse matrix describing a collection (i.e., a corpus) of documents with one row for each document and one column for each term. The value in the matrix is typically word count or tf-idf.
+**Document-Term Matrix:** a sparse matrix descr ibing a collection (i.e., a corpus) of documents with one row for each document and one column for each term. The value in the matrix is typically word count or tf-idf.
 
 ## Sentiment Analysis
 
@@ -25,6 +25,7 @@
 <img src="Images/idf.PNG" width="500">
 
 ## n-grams & Correlations
+> **n-grams:** consecutive sequences of words
 
 ## Converting to and from non-tidy formats
 <img src="Images/nontidy.PNG" width="700">
@@ -38,6 +39,10 @@
 
 ## Topic Modeling
 <img src="Images/topic.PNG" width="700">
+
+> **Latent Dirichlet Allocation:** is a particularly popular method for fitting a topic model. It treats each document as a mixture of topics, and each topic as a mixture of words. This allows documents to “overlap” each other in terms of content, rather than being separated into discrete groups, in a way that mirrors typical use of natural language.
+> - **Every document is a mixture of topics.** We imagine that each document may contain words from several topics in particular proportions. For example, in a two-topic model we could say “Document 1 is 90% topic A and 10% topic B, while Document 2 is 30% topic A and 70% topic B.”
+> - **Every topic is a mixture of words.** For example, we could imagine a two-topic model of American news, with one topic for “politics” and one for “entertainment.” The most common words in the politics topic might be “President”, “Congress”, and “government”, while the entertainment topic may be made up of words such as “movies”, “television”, and “actor”. Importantly, words can be shared between topics; a word like “budget” might appear in both equally.
 
 # QDAP & tm
 <img src="Images/workflow.PNG" width="700">
