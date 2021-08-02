@@ -6,7 +6,7 @@
 
 **Token:** a meaningful unit of text, most often a word, that we are interested in using for further analysis, and tokenization is the process of splitting text into tokens.\
 **Corpus:** raw strings annotated with additional metadata and details.\
-**Document-Term Matrix:** a sparse matrix descr ibing a collection (i.e., a corpus) of documents with one row for each document and one column for each term. The value in the matrix is typically word count or tf-idf.
+**Document-Term Matrix:** a sparse matrix describing a collection (i.e., a corpus) of documents with one row for each document and one column for each term. The value in the matrix is typically word count or tf-idf.
 
 ## Sentiment Analysis
 
@@ -19,8 +19,9 @@
 
 ## Term-Frequency Inverse Document Frequency
 > **Term Frequency:** how frequently a word occurs in a document.\
+ (Number of times term t appears in a document) / (Total number of terms in the document).\
 **Inverse Document Frequency:**  decreases the weight for commonly used words and increases the weight for words that are not used very much in a collection of documents.\
-**TF-IDF:** the frequency of a term adjusted for how rarely it is used. _(find the important words for the content of each document by decreasing the weight for commonly used words and increasing the weight for words that are not used very much in a collection or corpus of documents)_
+**TF-IDF:** the frequency of a term adjusted for how rarely it is used. _(find the important words for the content of each document by decreasing the weight for commonly used words and increasing the weight for words that are not used very much in a collection or corpus of documents)_  log_e(Total number of documents / Number of documents with term t in it).
 
 <img src="Images/idf.PNG" width="500">
 
@@ -38,6 +39,10 @@
 > - Each value (typically) contains the number of appearances of that term in that document
 
 ## Topic Modeling
+> statistical algorithms for discovering the latent semantic structures of an extensive text body.\
+
+> results in two (approximate) posterior probability distributions: a distribution theta over K topics within each document and a distribution beta over V terms within each topic, where V represents the length of the vocabulary of the collection (V = 4278).
+
 <img src="Images/topic.PNG" width="700">
 
 > **Latent Dirichlet Allocation:** is a particularly popular method for fitting a topic model. It treats each document as a mixture of topics, and each topic as a mixture of words. This allows documents to “overlap” each other in terms of content, rather than being separated into discrete groups, in a way that mirrors typical use of natural language.

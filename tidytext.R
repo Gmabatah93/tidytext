@@ -1,4 +1,6 @@
 library(tidyverse)
+library(lubridate)
+library(purrr)
 theme_set(theme_minimal())
 library(tidytext)
 library(wordcloud)
@@ -373,44 +375,38 @@ acq_tokens %>%
 
 
 # Topic Models ----
+
+# Data
 data("AssociatedPress")
-AssociatedPress
-# - LDA
+AssociatedPress # collection of 2246 news articles from an American news agency, mostly published around 1988
+
+# LDA
 ap_lda <- LDA(AssociatedPress, k = 2, control = list(seed = 1234))
+
+# - Topic-word: (1 = Business/Financial | 2 = Political)
 ap_topics <- tidy(ap_lda, matrix = "beta")
-# - LDA: top terms
-ap_top_terms <- ap_topics %>% 
+ap_topics_terms <- ap_topics %>% 
   group_by(topic) %>% 
   slice_max(beta, n = 10) %>% 
   ungroup() %>% 
   arrange(topic, -beta)
 
-ap_top_terms %>%
+ap_topics_terms %>%
   mutate(term = reorder_within(term, beta, topic)) %>%
   ggplot(aes(beta, term, fill = factor(topic))) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~ topic, scales = "free") +
   scale_y_reordered()
 
-# LDA: log ratio
-beta_wide <- ap_topics %>%
-  mutate(topic = paste0("topic", topic)) %>%
-  pivot_wider(names_from = topic, values_from = beta) %>% 
-  filter(topic1 > .001 | topic2 > .001) %>%
-  mutate(log_ratio = log2(topic2 / topic1))
-beta_wide %>% 
-  slice_max(abs(log_ratio), n = 20) %>% 
-  mutate(term = reorder(term, log_ratio)) %>% 
-  ggplot(aes(log_ratio, term)) +
-  geom_col()
-
-# LDA: Document-Topic Probabilities
+# - Document-topic 
 ap_documents <- tidy(ap_lda, matrix = "gamma")
 tidy(AssociatedPress) %>%
   filter(document == 6) %>%
   arrange(desc(count))
 
-# The Great Library Heist ----
+# EXAMPLE: The Great Library Heist ----
+
+# Data
 library(gutenbergr)
 titles <- c("Twenty Thousand Leagues under the Sea", 
             "The War of the Worlds",
@@ -418,8 +414,10 @@ titles <- c("Twenty Thousand Leagues under the Sea",
             "Great Expectations")
 books <- gutenberg_works(title %in% titles) %>% 
   gutenberg_download(meta_fields = "title")
+books %>% count(title)
 
-# divide into documents, each representing one chapter
+# Text Preprocessing
+# - Each document represents 1 chapter
 by_chapter <- books %>%
   group_by(title) %>%
   mutate(chapter = cumsum(str_detect(
@@ -428,35 +426,39 @@ by_chapter <- books %>%
   ungroup() %>%
   filter(chapter > 0) %>%
   unite(document, title, chapter)
-
-# split into words
+# - Bag of Words
 by_chapter_word <- by_chapter %>%
   unnest_tokens(word, text)
 
-# find document-word counts
-word_counts <- by_chapter_word %>%
+by_chapter_word_counts <- by_chapter_word %>%
   anti_join(stop_words) %>%
   count(document, word, sort = TRUE) %>%
   ungroup()
 
-# LDA: On Chapters
-chapters_dtm <- word_counts %>%
+
+# LDA
+# - Document Term Matrix
+chapters_dtm <- by_chapter_word_counts %>%
   cast_dtm(document, word, n)
+# - 4 Books -> 4 Chapters
 chapters_lda <- LDA(chapters_dtm, k = 4, control = list(seed = 1234))
+# - Topic-word
 chapter_topics <- tidy(chapters_lda, matrix = "beta")
-top_terms <- chapter_topics %>%
+chapter_topics_terms <- chapter_topics %>%
   group_by(topic) %>%
   slice_max(beta, n = 5) %>% 
   ungroup() %>%
   arrange(topic, -beta)
 
-top_terms %>%
+chapter_topics_terms %>%
   mutate(term = reorder_within(term, beta, topic)) %>%
   ggplot(aes(beta, term, fill = factor(topic))) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~ topic, scales = "free") +
-  scale_y_reordered()
+  scale_y_reordered() +
+  labs(title = "Top ")
 
+# - Document-topic 
 chapters_gamma <- tidy(chapters_lda, matrix = "gamma")
 chapters_gamma <- chapters_gamma %>%
   separate(document, c("title", "chapter"), sep = "_", convert = TRUE)
@@ -466,3 +468,235 @@ chapters_gamma %>%
   geom_boxplot() +
   facet_wrap(~ title) +
   labs(x = "topic", y = expression(gamma))
+
+# EXAMPLE: Twitter ----
+
+# Data
+tweets_julia <- read_csv(file = "https://raw.githubusercontent.com/dgrtwo/tidy-text-mining/master/data/tweets_julia.csv")
+tweets_dave <- read_csv("https://raw.githubusercontent.com/dgrtwo/tidy-text-mining/master/data/tweets_dave.csv")
+tweets <- bind_rows(tweets_julia %>% mutate(person = "Julia"),
+                    tweets_dave %>% mutate(person = "David")) %>% 
+            mutate(timestamp = ymd_hms(timestamp))
+
+# EDA
+tweets %>% 
+  ggplot(aes(timestamp, fill = person)) +
+  geom_histogram(position = "identity", bins = 20, show.legend = FALSE) +
+  facet_wrap(~person, ncol = 1) +
+  ggtitle(label = "Frequency of Tweets")
+
+# Text Preprocessing 
+remove_reg <- "&amp;|&lt;|&gt;"
+tidy_tweets <- tweets %>% 
+  # remove retweets
+  filter(!str_detect(text, "^RT")) %>%
+  # remove amps etc...
+  mutate(text = str_remove_all(text, remove_reg)) %>%
+  # bag of words (retain hashtags and mentions of usernames with the @ symbol)
+  unnest_tokens(word, text, token = "tweets") %>%
+  # remove stop words 
+  filter(!word %in% stop_words$word,
+         !word %in% str_remove_all(stop_words$word, "'"),
+         str_detect(word, "[a-z]"))
+
+
+
+# Word Frequencies for each person
+frequency <- tidy_tweets %>% 
+  group_by(person) %>% 
+  count(word, sort = TRUE) %>% 
+  left_join(tidy_tweets %>% 
+              group_by(person) %>% 
+              summarise(total = n())) %>% 
+  mutate(freq = n/total)
+
+frequency %>% 
+  select(person, word, freq) %>% 
+  pivot_wider(names_from = person, values_from = freq) %>% 
+  arrange(Julia, David) %>% 
+  ggplot(aes(Julia, David)) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.25, height = 0.25) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+  scale_x_log10(labels = scales::percent_format()) +
+  scale_y_log10(labels = scales::percent_format()) + 
+  geom_abline(color = "red")
+
+
+
+
+# Tweets (2016)
+tidy_tweets_2016 <- tidy_tweets %>% 
+  filter(timestamp >= as.Date("2016-01-01"),
+         timestamp < as.Date("2017-01-01"))
+
+word_ratio <- tidy_tweets_2016 %>% 
+  # remove twitter usernames
+  filter(!str_detect(word, "^@")) %>% 
+  count(word, person) %>% 
+  group_by(word) %>% 
+  filter(sum(n) >= 10) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = person, values_from = n, values_fill = 0) %>% 
+  # calc log ratio
+  mutate_if(is.numeric, list(~(. + 1) / (sum(.) + 1))) %>% 
+  mutate(logratio = log(David / Julia)) %>% 
+  arrange(desc(logratio))
+
+# - What are some words that have been about equally likely to come from David or Julia’s account during 2016 ?
+word_ratio %>% 
+  arrange(abs(logratio))
+# - Which words are most likely to be from Julia’s account or from David’s account ?
+word_ratio %>%
+  group_by(logratio < 0) %>%
+  slice_max(abs(logratio), n = 15) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, logratio)) %>%
+  ggplot(aes(word, logratio, fill = logratio < 0)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  ylab("log odds ratio (David/Julia)") +
+  scale_fill_discrete(name = "", labels = c("David", "Julia"))
+
+
+
+
+# Changes in word use
+words_by_time <- tidy_tweets_2016 %>% 
+  filter(!str_detect(word, "^@")) %>%
+  # define a new time variable in the data frame that defines which unit of time each tweet was posted in.
+  mutate(time_floor = floor_date(timestamp, unit = "1 month")) %>%
+  count(time_floor, person, word) %>%
+  group_by(person, time_floor) %>%
+  # total number of words used in each time bin
+  mutate(time_total = sum(n)) %>%
+  group_by(person, word) %>%
+  # total number of times each word was used
+  mutate(word_total = sum(n)) %>%
+  ungroup() %>%
+  rename(count = n) %>%
+  filter(word_total > 30)
+
+# - MODEL: Was a given word mentioned in a given time bin ? Yes or no ? How does the count of word mentions depend on time ?”
+nested_data <- words_by_time %>%
+  nest(-word, -person)
+
+nested_models <- nested_data %>%
+  mutate(models = map(data, ~ glm(cbind(count, time_total) ~ time_floor, ., 
+                                  family = "binomial")))
+# - pull out the slopes for each of these models and find the important ones
+slopes <- nested_models %>%
+  mutate(models = map(models, tidy)) %>%
+  unnest(cols = c(models)) %>%
+  filter(term == "time_floor") %>%
+  mutate(adjusted.p.value = p.adjust(p.value))
+top_slopes <- slopes %>% 
+  filter(adjusted.p.value < 0.05)
+
+words_by_time %>%
+  inner_join(top_slopes, by = c("word", "person")) %>%
+  filter(person == "David") %>%
+  ggplot(aes(time_floor, count/time_total, color = word)) +
+  geom_line(size = 1.3) +
+  labs(x = NULL, y = "Word frequency")
+words_by_time %>%
+  inner_join(top_slopes, by = c("word", "person")) %>%
+  filter(person == "Julia") %>%
+  ggplot(aes(time_floor, count/time_total, color = word)) +
+  geom_line(size = 1.3) +
+  labs(x = NULL, y = "Word frequency")
+
+
+
+
+# EXAMPLE: Favorites and Retweets ----
+
+# Data
+tweets_julia <- read_csv("https://raw.githubusercontent.com/dgrtwo/tidy-text-mining/master/data/juliasilge_tweets.csv")
+tweets_david <- read_csv("https://raw.githubusercontent.com/dgrtwo/tidy-text-mining/master/data/drob_tweets.csv")
+tweets <- bind_rows(tweets_julia %>% mutate(person = "Julia"),
+                    tweets_dave %>% mutate(person = "David")) %>%
+  mutate(created_at = ymd_hms(created_at))
+
+# Text Preprocessing 
+tidy_tweets <- tweets %>% 
+  # remove all retweets and replies
+  filter(!str_detect(text, "^(RT|@)")) %>%
+  mutate(text = str_remove_all(text, remove_reg)) %>%
+  unnest_tokens(word, text, token = "tweets", strip_url = TRUE) %>%
+  filter(!word %in% stop_words$word,
+         !word %in% str_remove_all(stop_words$word, "'"))
+
+# EDA
+# - Total Number of Retweets
+totals <- tidy_tweets %>% 
+  group_by(person, id) %>% 
+  summarise(rts = first(retweets)) %>% 
+  group_by(person) %>% 
+  summarise(total_rts = sum(rts))
+
+# EXAMPLE: NASA ----
+
+# Data
+library(jsonlite)
+metadata <- fromJSON("https://data.nasa.gov/data.json")
+
+nasa_title <- tibble(title = metadata$dataset$title) %>% 
+  mutate(id = seq(1, nrow(.))) %>% 
+  select(id, title)
+nasa_desc <- tibble(desc = metadata$dataset$description) %>% 
+  mutate(id = seq(1, nrow(.))) %>% 
+  select(id, desc)
+nasa_keyword <- tibble(keyword = metadata$dataset$keyword) %>% unnest(keyword)
+
+# Tokenization
+my_stopwords <- tibble(word = c(as.character(1:10), 
+                                "v1", "v03", "l2", "l3", "l4", "v5.2.0", 
+                                "v003", "v004", "v005", "v006", "v7",
+                                stop_words$word))
+nasa_title_tokens <- nasa_title %>% 
+  unnest_tokens(output = word, input = title) %>% 
+  anti_join(my_stopwords)
+nasa_desc_tokens <- nasa_desc %>% 
+  unnest_tokens(word, desc) %>% 
+  anti_join(my_stopwords)
+
+# EDA 
+# - counts
+nasa_title_tokens %>% count(word, sort = TRUE)
+nasa_desc_tokens %>% count(word, sort = TRUE)
+nasa_keyword %>% group_by(keyword) %>% count(sort = TRUE)
+# - word co-ocurrences and correlations
+library(widyr)
+library(igraph)
+library(ggraph)
+
+title_words_pairs <- nasa_title_tokens %>% 
+  pairwise_count(word, id, sort = TRUE, upper = FALSE)
+desc_word_pairs <- nasa_desc_tokens %>% 
+  pairwise_count(word, id, sort = TRUE, upper = FALSE)
+
+title_words_pairs %>% 
+  filter(n >= 250) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n, edge_width = n), edge_colour = "cyan4") +
+  geom_node_point(size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE, 
+                 point.padding = unit(0.2, "lines")) +
+  theme_void()
+
+set.seed(1234)
+desc_word_pairs %>%
+  filter(n >= 5000) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n, edge_width = n), edge_colour = "darkred") +
+  geom_node_point(size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE,
+                 point.padding = unit(0.2, "lines")) +
+  theme_void()
+
+keyword_pairs <- nasa_keyword %>% 
+  pairwise_count(keyword, id, sort = TRUE, upper = FALSE)
+
+# EXAMPLE: Usenet Bulletin Boards ----
