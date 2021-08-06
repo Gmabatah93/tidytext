@@ -126,48 +126,52 @@ physics_tf_idf %>%
 
 #
 # n-grams & correlations ----
-austen_bigrams <- janeaustenr::austen_books() %>% 
-  unnest_tokens(bigram, text, token = "ngrams", n = 2)
 
-austen_bigrams %>% 
-  count(bigram, sort = TRUE)
+# Data
+austen <- janeaustenr::austen_books() 
 
-bigrams_seperated <- austen_bigrams %>% 
-  separate(bigram, c("word1","word2"), sep = " ")
-
-bigrams_filtered <- bigrams_seperated %>% 
+# Toeknization
+austen_bigrams <- austen %>% 
+  unnest_tokens(bigram, text, token = "ngrams", n = 2) %>% 
+  separate(bigram, c("word1","word2"), sep = " ") %>% 
   filter(!word1 %in% stop_words$word) %>% 
   filter(!word2 %in% stop_words$word)
 
-bigrams_count <- bigrams_filtered %>% 
-  count(word1, word2, sort = TRUE)
-
-bigrams_united <- bigrams_filtered %>%
+austen_bigrams_united <- austen_bigrams %>% 
   unite(bigram, word1, word2, sep = " ")
 
-janeaustenr::austen_books() %>%
-  unnest_tokens(trigram, text, token = "ngrams", n = 3) %>%
-  separate(trigram, c("word1", "word2", "word3"), sep = " ") %>%
-  filter(!word1 %in% stop_words$word,
-         !word2 %in% stop_words$word,
-         !word3 %in% stop_words$word) %>%
-  count(word1, word2, word3, sort = TRUE)
+austen_bigrams_tfidf <- austen_bigrams_united %>% 
+  count(book, bigram) %>% 
+  bind_tf_idf(bigram, book, n) %>% 
+  arrange(-tf_idf)
 
-bigrams_filtered %>%
-  filter(word2 == "street") %>%
+library(forcats)
+austen_bigrams_tfidf %>%
+  group_by(book) %>%
+  slice_max(tf_idf, n = 15) %>%
+  ungroup() %>%
+  ggplot(aes(tf_idf, fct_reorder(bigram, tf_idf), fill = book)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~book, ncol = 2, scales = "free") +
+  labs(x = "tf-idf", y = NULL)
+
+# EDA
+austen_bigrams %>% 
+  filter(word2 == "street") %>% 
   count(book, word1, sort = TRUE)
 
-bigram_tf_idf <- bigrams_united %>%
-  count(book, bigram) %>%
-  bind_tf_idf(bigram, book, n) %>%
-  arrange(desc(tf_idf))
-
-bigrams_seperated %>%
+austen %>% 
+  unnest_tokens(bigram, text, token = "ngrams", n = 2) %>% 
+  separate(bigram, c("word1","word2"), sep = " ") %>%
   filter(word1 == "not") %>%
   count(word1, word2, sort = TRUE)
 
+# Sentiment Analysis
 AFINN <- get_sentiments("afinn")
-not_words <- bigrams_seperated %>%
+# - not words
+not_words <- austen %>% 
+  unnest_tokens(bigram, text, token = "ngrams", n = 2) %>% 
+  separate(bigram, c("word1","word2"), sep = " ") %>%
   filter(word1 == "not") %>%
   inner_join(AFINN, by = c(word2 = "word")) %>%
   count(word2, value, sort = TRUE)
@@ -180,13 +184,25 @@ not_words %>%
   geom_col(show.legend = FALSE) +
   labs(x = "Sentiment value * number of occurrences",
        y = "Words preceded by \"not\"")
-
+# - negation words
 negation_words <- c("not", "no", "never", "without")
 
-negated_words <- bigrams_seperated %>%
+negated_words <- austen %>% 
+  unnest_tokens(bigram, text, token = "ngrams", n = 2) %>% 
+  separate(bigram, c("word1","word2"), sep = " ") %>%
   filter(word1 %in% negation_words) %>%
   inner_join(AFINN, by = c(word2 = "word")) %>%
   count(word1, word2, value, sort = TRUE)
+negated_words %>%
+  mutate(contribution = n * value) %>%
+  arrange(desc(abs(contribution))) %>%
+  head(50) %>%
+  mutate(word2 = reorder(word2, contribution)) %>%
+  ggplot(aes(n * value, word2, fill = n * value > 0)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~word1) +
+  labs(x = "Sentiment value * number of occurrences",
+       y = "Words preceded by \"not\"")
 
 library(igraph)
 library(ggraph)
