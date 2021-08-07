@@ -228,17 +228,24 @@ ggraph(bigram_graph, layout = "fr") +
 
 # Converting to and from non-tidy formats ----
 library(tm)
+
+# Data
 data("AssociatedPress", package = "topicmodels")
 AssociatedPress
 terms <- Terms(AssociatedPress)
 head(terms)
 
+data("data_corpus_inaugural", package = "quanteda")
+inaug_dfm <- quanteda::dfm(data_corpus_inaugural, verbose = FALSE)
+
+data("acq", package = "tm")
+acq[[1]]
 
 
-# Tidying DocumentTermMatrix objects
-ap_td <- tidy(AssociatedPress) 
+# Tidying DocumentTermMatrix objects "only non-zero values are included"
+ap_tidy <- tidy(AssociatedPress) 
 # - Sentiment Analysis
-ap_sentiments <- ap_td %>%
+ap_sentiments <- ap_tidy %>%
   inner_join(get_sentiments("bing"), by = c(term = "word"))
 ap_sentiments %>%
   count(sentiment, term, wt = count) %>%
@@ -249,39 +256,126 @@ ap_sentiments %>%
   ggplot(aes(n, term, fill = sentiment)) +
   geom_col() +
   labs(x = "Contribution to sentiment", y = NULL)
-# - Casting tidytext data into a DTM
-ap_td %>% cast_dtm(document = document, 
-                   term = term, 
-                   value = count)
-# - Cast into a Matix Object
+
+
+
+# Tidying Document-Feature Matrix objects
+inuag_tidy <- tidy(inaug_dfm)
+# - tokenization
+inuag_tidy %>% 
+  bind_tf_idf(term, document, count) %>% 
+  arrange(-tf_idf) %>% 
+  group_by(document) %>% 
+  top_n(n = 15,wt = tf_idf) %>% 
+  ungroup() %>%
+  filter(document %in% c("1861-Lincoln","1933-Roosevelt","1961-Kennedy","2009-Obama")) %>% 
+  ggplot(aes(tf_idf, forcats::fct_reorder(term, tf_idf), fill = document)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~document,scales = "free") +
+  labs(x = NULL, y = NULL) +
+  theme_bw()
+# - Total number of words within each year & how word frequency changes over the years
+words <- c("god", "america", "foreign", "union", "constitution", "freedom")
+year_term_counts <- inuag_tidy %>% 
+  extract(document, "year", "(\\d+)", convert = TRUE) %>% 
+  complete(year, term, fill = list(count = 0)) %>% 
+  group_by(year) %>% 
+  mutate(year_total = sum(count))
+year_term_counts %>% 
+  filter(term %in% words) %>% 
+  ggplot(aes(year, count / year_total)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(~term, scales = "free_y") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(y = "% frequency of word in inaugural address") +
+  theme_bw()
+
+
+
+# Casting tidy text data into a Matrix
+ap_tidy %>% cast_dtm(document = document, 
+                     term = term, 
+                     value = count)
+ap_tidy %>% cast_dfm(document = document,
+                     term = term,
+                     value = count)
+# - sparsity
 library(Matrix)
-m <- ap_td %>% cast_sparse(document, term, count)
+ap_tidy %>% cast_sparse(row = document,
+                        column = term, 
+                        value = count) %>% 
+  dim()
 
 
 
 
 # Tidying corpus objects with metadata
-data("acq", package = "tm")
-acq[[1]]
-
-acq_td <- tidy(acq)
-# - Tokenization
-acq_tokens <- acq_td %>%
+# - tidy
+acq_tidy <- tidy(acq)
+# - tokenization
+acq_tokens <- acq_tidy %>%
   select(-places) %>%
   unnest_tokens(word, text) %>%
   anti_join(stop_words, by = "word")
-# - Bag of Words
-acq_tokens %>% 
-  count(word, sort = TRUE)
-# - TF-IDF
-acq_tokens %>% 
+# - word frequency
+acq_tokens %>% count(word, sort = TRUE)
+# - tf_idf
+acq_tf_idf <- acq_tokens %>% 
   count(id, word) %>% 
   bind_tf_idf(term = word,
               document =  id,
               n = n) %>% 
   arrange(desc(tf_idf))
 
+ids <- c("110","372","362","496","45","302","331","448","10","393")
+acq_tf_idf %>%
+  group_by(id) %>% 
+  top_n(n = 15, wt = tf_idf) %>% 
+  ungroup() %>% 
+  filter(id %in% ids) %>% 
+  ggplot(aes(tf_idf, forcats::fct_reorder(word, tf_idf), fill = id)) +
+  geom_col(show.legend = F) +
+  facet_wrap(~id, nrow = 2, scales = "free") +
+  labs(y = NULL, x = NULL)
 
+
+
+
+
+
+
+
+# EXAMPLE: Jane Austenr
+# - data
+austen <- janeaustenr::austen_books()
+# - tokenize
+austen_tidy <- austen %>% 
+  unnest_tokens(word, text) %>%
+  count(book, word)
+# - cast DTM
+austen_tidy %>% 
+  cast_dtm(document = book, 
+           term = word, 
+           value = n)
+
+
+# EXAMPLE: Mnining Financial Articles
+library(tm.plugin.webmining)
+library(purrr)
+
+company <- c("Microsoft", "Apple", "Google", "Amazon", "Facebook",
+             "Twitter", "IBM", "Yahoo", "Netflix")
+symbol  <- c("MSFT", "AAPL", "GOOG", "AMZN", "FB", 
+             "TWTR", "IBM", "YHOO", "NFLX")
+
+download_articles <- function(symbol) {
+  WebCorpus(GoogleFinanceSource(paste0("NASDAQ:", symbol)))
+}
+
+stock_articles <- tibble(company = company,
+                         symbol = symbol) %>%
+  mutate(corpus = map(symbol, download_articles))
 
 # Sentiment Analysis ----
 get_sentiments("afinn")
