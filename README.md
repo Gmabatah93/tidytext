@@ -16,15 +16,6 @@
 
 <img src="Images/idf.PNG" width="500">
 
-## Sentiment Analysis
-
-<img src="Images/sentiment.PNG" width="700">
-
-**_DATASETS_**
-- **AFINN** _assigns words with a score that runs between -5 and 5, with negative scores indicating negative sentiment and positive scores indicating positive sentiment._
-- **bing:** _categorizes words in a binary fashion into positive and negative categories._
-- **nrc:** _categorizes words in a binary fashion [ yes/no ] into categories of positive, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, and trust._
-
 
 ## n-grams & Correlations
 > **n-grams:** consecutive sequences of words
@@ -38,6 +29,15 @@
 > - Each row represents one document
 > - Each column represents one term
 > - Each value (typically) contains the number of appearances of that term in that document
+
+## Sentiment Analysis
+
+<img src="Images/sentiment.PNG" width="700">
+
+**_DATASETS_**
+- **AFINN** _assigns words with a score that runs between -5 and 5, with negative scores indicating negative sentiment and positive scores indicating positive sentiment._
+- **bing:** _categorizes words in a binary fashion into positive and negative categories._
+- **nrc:** _categorizes words in a binary fashion [ yes/no ] into categories of positive, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, and trust._
 
 ## Topic Modeling
 > statistical algorithms for discovering the latent semantic structures of an extensive text body.\

@@ -378,85 +378,93 @@ stock_articles <- tibble(company = company,
   mutate(corpus = map(symbol, download_articles))
 
 # Sentiment Analysis ----
+
+# Lexicons
 get_sentiments("afinn")
 get_sentiments("bing")
 get_sentiments("nrc")
 
-tidy_books <- janeaustenr::austen_books() %>% 
+# Data
+books <- janeaustenr::austen_books() %>% 
   group_by(book) %>% 
   mutate(
     linenumber = row_number(),
     chapter = cumsum(str_detect(text, 
                                 regex("^chapter [\\divxlc]", 
-                                ignore_case = TRUE)))) %>%
+                                ignore_case = TRUE))))
+
+# Tokenization
+books_tidy <- books %>% 
   ungroup() %>%
   unnest_tokens(word, text)
 
-# nrc
-nrc_joy <- get_sentiments("nrc") %>% 
+# Senitment: nrc
+nrc_joy <- 
+  get_sentiments("nrc") %>% 
   filter(sentiment == "joy")
 
-tidy_books %>% 
+books_tidy %>% 
   filter(book == "Emma") %>% 
   inner_join(nrc_joy) %>% 
   count(word, sort = TRUE)
 
-# bing
-jane_austen_sentiment <- tidy_books %>% 
+# Senitment: bing
+books_bing <-  books_tidy %>% 
   inner_join(get_sentiments("bing")) %>% 
   count(book, index = linenumber %/% 80, sentiment) %>% 
   pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>% 
   mutate(sentiment = positive - negative)
 
-jane_austen_sentiment %>% 
+books_bing %>% 
   ggplot(aes(index, sentiment, fill = book)) +
   geom_col(show.legend = F) +
-  facet_wrap(~book, ncol = 2, scales = "free_x")
+  facet_wrap(~book, ncol = 2, scales = "free_x") +
+  ggtitle("how the plot of each novel changes toward more positive or negative sentiment over the trajectory of the story.")
 
-# 3 sentiments
-pride_prejudice <- tidy_books %>% 
+# EDA: How does sentiment changes across the narrative arc of Pride and Prejudice
+pride_prejudice_tidy <- books_tidy %>% 
   filter(book == "Pride & Prejudice")
-
-afinn <- pride_prejudice %>% 
+# - afinn
+pride_prejudice_afinn <- pride_prejudice_tidy %>% 
   inner_join(get_sentiments("afinn")) %>% 
   group_by(index = linenumber %/% 80) %>% 
   summarise(sentiment = sum(value)) %>% 
   mutate(method = "AFINN")
-
-bing_and_nrc <- bind_rows(
-  pride_prejudice %>% 
-    inner_join(get_sentiments("bing")) %>% 
-    mutate(method = "Bing et al."),
-  pride_prejudice %>% 
-    inner_join(get_sentiments("nrc") %>% 
-                 filter(sentiment %in% c("positive", "negative"))
-               ) %>% 
-    mutate(method = "NRC")) %>% 
+# - bing & nrc
+pride_prejudice_bing_and_nrc <- 
+  bind_rows(pride_prejudice_tidy %>% 
+              inner_join(get_sentiments("bing")) %>% 
+              mutate(method = "Bing et al."),
+            pride_prejudice_tidy %>% 
+              inner_join(get_sentiments("nrc") %>% filter(sentiment %in% c("positive", "negative"))) %>% 
+              mutate(method = "NRC")) %>% 
   count(method, index = linenumber %/% 80, sentiment) %>% 
   pivot_wider(names_from = sentiment,
               values_from = n,
               values_fill = 0) %>% 
   mutate(sentiment = positive - negative)
 
-# - Visual
-bind_rows(afinn, bing_and_nrc) %>% 
+# - visual
+bind_rows(pride_prejudice_afinn, pride_prejudice_bing_and_nrc) %>% 
   ggplot(aes(index, sentiment, fill = method)) +
   geom_col(show.legend = F) +
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
-# Most common positive and negative words
-bing_word_counts <- tidy_books %>%
+# EDA: Most common positive and negative words
+books_bing_word_counts <- books_tidy %>%
   inner_join(get_sentiments("bing")) %>%
   count(word, sentiment, sort = TRUE) %>%
   ungroup()
 
-bing_word_counts %>% 
+books_bing_word_counts %>% 
   group_by(sentiment) %>% 
   slice_max(n, n = 10) %>% 
   ungroup() %>% 
-  ggplot(aes(n, word, fill = sentiment)) +
+  ggplot(aes(n, forcats::fct_reorder(word, n), fill = sentiment)) +
   geom_col(show.legend = F) +
-  facet_wrap(~sentiment, scales = "free_y")
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(y = NULL, x = NULL) +
+  theme_bw()
 
 custom_stop_words <- bind_rows(tibble(word = c("miss"),  
                                       lexicon = c("custom")), 
